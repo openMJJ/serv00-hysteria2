@@ -20,5 +20,5 @@
 bash <(curl -fsSL https://github.com/openMJJ/serv00-hysteria2/raw/main/serv00_singbox.sh)
 
 项目结构
-程序路径：/root/sbox/sing-box
-服务端配置文件：/root/sbox/sbconfig_server.json
+程序路径：~/sbox/sing-box
+服务端配置文件：~/sbox/sbconfig_server.json
