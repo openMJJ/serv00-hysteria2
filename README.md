@@ -7,9 +7,8 @@
 - 无脑生成sing-box，clash-meta，v2rayN，nekoray等通用链接格式
 
 ## 需求
-- Linux 操作系统
-- Bash shell
-- Internet 连接
+- SERV00操作系统
+
 
 ## 使用教程
 ### Reality和Hysteria2 脚本
