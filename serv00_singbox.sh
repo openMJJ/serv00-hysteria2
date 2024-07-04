@@ -26,7 +26,7 @@ print_with_delay "sing-reality-hy2-box" 0.05
 echo ""
 echo ""
 
-# download singbox and cloudflared
+# download singbox
 download_singbox() {
     echo "Downloading Sing-box from https://github.com/openMJJ/serv00-hysteria2/releases/download/freebsd/sing-box"
     if [ ! -d "$HOME/sbox" ]; then
@@ -34,41 +34,6 @@ download_singbox() {
     fi
     wget -qO "$HOME/sbox/sing-box" "https://github.com/openMJJ/serv00-hysteria2/releases/download/freebsd/sing-box"
     chmod +x "$HOME/sbox/sing-box"
-}
-
-download_cloudflared() {
-    arch=$(uname -m)
-    case ${arch} in
-        x86_64)
-            cf_arch="amd64"
-            ;;
-        aarch64)
-            cf_arch="arm64"
-            ;;
-        armv7l)
-            cf_arch="arm"
-            ;;
-    esac
-    cf_url="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${cf_arch}"
-    wget -qO "$HOME/sbox/cloudflared-linux" "$cf_url"
-    chmod +x "$HOME/sbox/cloudflared-linux"
-    echo ""
-}
-
-regenarte_cloudflared_argo() {
-    pid=$(pgrep -f cloudflared)
-    if [ -n "$pid" ]; then
-        kill "$pid"
-    fi
-    vmess_port=$(jq -r '.inbounds[2].listen_port' "$HOME/sbox/sbconfig_server.json")
-    "$HOME/sbox/cloudflared-linux" tunnel --url http://localhost:$vmess_port --no-autoupdate --edge-ip-version auto --protocol h2mux > argo.log 2>&1 &
-    sleep 2
-    clear
-    echo "等待cloudflare argo生成地址"
-    sleep 5
-    argo=$(grep trycloudflare.com argo.log | awk 'NR==2{print}' | awk -F// '{print $2}' | awk '{print $1}')
-    echo "$argo" | base64 > "$HOME/sbox/argo.txt.b64"
-    rm -rf argo.log
 }
 
 show_client_configuration() {
@@ -99,7 +64,7 @@ show_client_configuration() {
     echo ""
     echo ""
     hy_current_listen_port=$(jq -r '.inbounds[1].listen_port' "$HOME/sbox/sbconfig_server.json")
-    hy_current_server_name=$(openssl x509 -in "$HOME/self-cert/cert.pem" -noout -subject -nameopt RFC2253 | awk -F'=' '{print $NF}')
+    hy_current_server_name=$(openssl x509 -in "$HOME/sbox/self-cert/cert.pem" -noout -subject -nameopt RFC2253 | awk -F'=' '{print $NF}')
     hy_password=$(jq -r '.inbounds[1].users[0].password' "$HOME/sbox/sbconfig_server.json")
     hy2_server_link="hysteria2://$hy_password@$server_ip:$hy_current_listen_port?insecure=1&sni=$hy_current_server_name"
     show_notice "Hysteria2 客户端通用链接"
@@ -147,18 +112,16 @@ uninstall_singbox() {
     echo "Uninstalling..."
     rm "$HOME/sbox/sbconfig_server.json"
     rm "$HOME/sbox/sing-box"
-    rm "$HOME/sbox/cloudflared-linux"
-    rm "$HOME/sbox/argo.txt.b64"
     rm "$HOME/sbox/public.key.b64"
-    rm "$HOME/self-cert/private.key"
-    rm "$HOME/self-cert/cert.pem"
-    rm -rf "$HOME/self-cert/"
+    rm "$HOME/sbox/self-cert/private.key"
+    rm "$HOME/sbox/self-cert/cert.pem"
+    rm -rf "$HOME/sbox/self-cert/"
     rm -rf "$HOME/sbox/"
     echo "DONE!"
 }
 
 # Check if reality.json, sing-box, and sing-box.service already exist
-if [ -f "$HOME/sbox/sbconfig_server.json" ] && [ -f "$HOME/sbox/sing-box" ] && [ -f "$HOME/sbox/public.key.b64" ] && [ -f "$HOME/sbox/argo.txt.b64" ]; then
+if [ -f "$HOME/sbox/sbconfig_server.json" ] && [ -f "$HOME/sbox/sing-box" ] && [ -f "$HOME/sbox/public.key.b64" ]; then
     echo "sing-box-reality-hysteria2已经安装"
     echo ""
     echo "请选择选项:"
@@ -167,7 +130,7 @@ if [ -f "$HOME/sbox/sbconfig_server.json" ] && [ -f "$HOME/sbox/sing-box" ] && [
     echo "2. 修改配置"
     echo "3. 显示客户端配置"
     echo "4. 卸载"
-    echo "5. 手动重启cloudflared"
+    echo "5. 手动重启服务"
     echo ""
     read -p "Enter your choice (1-5): " choice
 
@@ -205,7 +168,8 @@ if [ -f "$HOME/sbox/sbconfig_server.json" ] && [ -f "$HOME/sbox/sing-box" ] && [
             exit 0
             ;;
         5)
-            regenarte_cloudflared_argo
+            pm2 delete sing-box
+            pm2 start "$HOME/sbox/sing-box" --name "sing-box" -- run -c "$HOME/sbox/sbconfig_server.json"
             echo "重新启动完成，查看新的客户端信息"
             show_client_configuration
             exit 0
@@ -220,8 +184,6 @@ fi
 mkdir -p "$HOME/sbox"
 
 download_singbox
-
-download_cloudflared
 
 echo "开始配置Reality"
 echo ""
@@ -251,30 +213,14 @@ hy_listen_port=${hy_listen_port:-8443}
 echo ""
 read -p "输入自签证书域名 (default: bing.com): " hy_server_name
 hy_server_name=${hy_server_name:-bing.com}
-mkdir -p "$HOME/self-cert/" && openssl ecparam -genkey -name prime256v1 -out "$HOME/self-cert/private.key" && openssl req -new -x509 -days 36500 -key "$HOME/self-cert/private.key" -out "$HOME/self-cert/cert.pem" -subj "/CN=${hy_server_name}"
+mkdir -p "$HOME/sbox/self-cert/" && openssl ecparam -genkey -name prime256v1 -out "$HOME/sbox/self-cert/private.key" && openssl req -new -x509 -days 36500 -key "$HOME/sbox/self-cert/private.key" -out "$HOME/sbox/self-cert/cert.pem" -subj "/CN=${hy_server_name}"
 echo ""
 echo "自签证书生成完成"
 echo ""
 
-pid=$(pgrep -f cloudflared)
-if [ -n "$pid" ]; then
-    kill "$pid"
-fi
-read -p "请输入vmess端口，默认为15555: " vmess_port
-vmess_port=${vmess_port:-15555}
-echo ""
-"$HOME/sbox/cloudflared-linux" tunnel --url http://localhost:$vmess_port --no-autoupdate --edge-ip-version auto --protocol h2mux > argo.log 2>&1 &
-sleep 2
-clear
-echo "等待cloudflare argo生成地址"
-sleep 5
-argo=$(grep trycloudflare.com argo.log | awk 'NR==2{print}' | awk -F// '{print $2}' | awk '{print $1}')
-echo "$argo" | base64 > "$HOME/sbox/argo.txt.b64"
-rm -rf argo.log
-
 read -p "请输入服务器IP地址: " server_ip
 
-jq -n --arg listen_port "$listen_port" --arg server_name "$server_name" --arg private_key "$private_key" --arg short_id "$short_id" --arg uuid "$uuid" --arg hy_listen_port "$hy_listen_port" --arg hy_password "$hy_password" --arg cert_path "$HOME/self-cert/cert.pem" --arg key_path "$HOME/self-cert/private.key" '{
+jq -n --arg listen_port "$listen_port" --arg server_name "$server_name" --arg private_key "$private_key" --arg short_id "$short_id" --arg uuid "$uuid" --arg hy_listen_port "$hy_listen_port" --arg hy_password "$hy_password" --arg cert_path "$HOME/sbox/self-cert/cert.pem" --arg key_path "$HOME/sbox/self-cert/private.key" --arg server_ip "$server_ip" '{
   "log": {
     "disabled": false,
     "level": "info",
@@ -284,7 +230,7 @@ jq -n --arg listen_port "$listen_port" --arg server_name "$server_name" --arg pr
     {
       "type": "vless",
       "tag": "vless-in",
-      "listen": "::",
+      "listen": $server_ip,
       "listen_port": ($listen_port | tonumber),
       "users": [
         {
@@ -309,7 +255,7 @@ jq -n --arg listen_port "$listen_port" --arg server_name "$server_name" --arg pr
     {
         "type": "hysteria2",
         "tag": "hy2-in",
-        "listen": "::",
+        "listen": $server_ip,
         "listen_port": ($hy_listen_port | tonumber),
         "users": [
             {
